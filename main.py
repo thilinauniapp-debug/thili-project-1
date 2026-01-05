@@ -60,9 +60,9 @@ def monitor_market():
         try:
             for symbol in symbols:
                 ratio_1h, price, trap_1h, side_1h = get_advanced_data(symbol, '1h')
-                if ratio_1h > 2.5:
+                if ratio_1h > 0.01:
                     ratio_5m, _, trap_5m, side_5m = get_advanced_data(symbol, '5m')
-                    if ratio_5m > 2.0:
+                    if ratio_5m > 0.01:
                         time_now = datetime.now(sri_lanka_tz).strftime('%I:%M %p')
                         msg = (f"🚨 *ADVANCED WHALE ALERT* 🚨\n\n"
                                f"💎 *කාසිය:* {symbol}\n"
