@@ -1,1 +1,102 @@
+import ccxt
+import pandas as pd
+import time
+import requests
+from datetime import datetime
+import pytz
+from flask import Flask, send_file # send_file එකතු කළා
+from threading import Thread
+import os
 
+# --- 1. RENDER සර්වර් එක ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Thili Project 1 is Running! <br><br> <a href='/history'>Download Signal History (CSV)</a>"
+
+# සිග්නල් ඉතිහාසය බාගත කරගැනීමට ලින්ක් එකක්
+@app.route('/history')
+def download_history():
+    if os.path.exists("signal_history.csv"):
+        return send_file("signal_history.csv", as_attachment=True)
+    return "No signals recorded yet."
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# --- 2. 'thili project 1' ප්‍රධාන කේතය ---
+exchange = ccxt.kraken()
+sri_lanka_tz = pytz.timezone('Asia/Colombo')
+
+TELEGRAM_TOKEN = '8332489688:AAEsjcVC2AHRVCeKMb6oBGddk1_1BwwZCX0'
+CHAT_ID = '1164598763'
+
+# ඔයා තීරණය කළ Top 50 කාසි ලැයිස්තුව මෙතනට දාන්න
+symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'LINK/USDT', 'ADA/USDT']
+
+def save_signal_to_csv(data):
+    """සිග්නල් එක CSV ෆයිල් එකකට සේව් කරන ෆන්ක්ෂන් එක"""
+    df = pd.DataFrame([data])
+    # ෆයිල් එක නැත්නම් අලුතින් හදනවා, තියෙනවා නම් අන්තිමට එකතු කරනවා
+    if not os.path.isfile('signal_history.csv'):
+        df.to_csv('signal_history.csv', index=False)
+    else:
+        df.to_csv('signal_history.csv', mode='a', header=False, index=False)
+
+def send_telegram_msg(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text={message}&parse_mode=Markdown"
+    try: requests.get(url)
+    except: pass
+
+def get_volume_ratio(symbol, timeframe):
+    try:
+        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=30)
+        df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+        df['vol_ma'] = df['volume'].rolling(window=20).mean()
+        ratio = df['volume'].iloc[-1] / df['vol_ma'].iloc[-1]
+        return ratio, df['close'].iloc[-1]
+    except: return 0, 0
+
+def monitor_market():
+    print("Whale Monitoring Started with History Logging...")
+    
+    while True:
+        try:
+            for symbol in symbols:
+                ratio_1h, price = get_volume_ratio(symbol, '1h')
+                
+                if ratio_1h > 2.5:
+                    ratio_5m, _ = get_volume_ratio(symbol, '5m')
+                    
+                    if ratio_5m > 2.0:
+                        time_now = datetime.now(sri_lanka_tz).strftime('%Y-%m-%d %I:%M %p')
+                        
+                        # 1. දත්ත ඉතිහාසයට සේව් කිරීම
+                        signal_data = {
+                            "Time": time_now,
+                            "Symbol": symbol,
+                            "Price": price,
+                            "Ratio_1h": f"{ratio_1h:.2f}",
+                            "Ratio_5m": f"{ratio_5m:.2f}"
+                        }
+                        save_signal_to_csv(signal_data)
+                        
+                        # 2. ටෙලිග්‍රෑම් පණිවිඩය යැවීම
+                        msg = (f"🚨 *CONFIRMED WHALE MOVEMENT* 🚨\n\n"
+                               f"💎 *කාසිය:* {symbol}\n"
+                               f"💰 *මිල:* ${price}\n"
+                               f"📊 *1h Ratio:* {ratio_1h:.2f}x\n"
+                               f"⚡ *5m Ratio:* {ratio_5m:.2f}x\n"
+                               f"⏰ *වේලාව:* {time_now}")
+                        send_telegram_msg(msg)
+            
+            time.sleep(120)
+        except Exception as e:
+            time.sleep(30)
+
+if __name__ == "__main__":
+    t = Thread(target=monitor_market)
+    t.start()
+    run_web_server()
