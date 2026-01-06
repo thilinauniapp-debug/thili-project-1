@@ -8,12 +8,15 @@ from flask import Flask
 from threading import Thread
 import os
 
-# --- 1. RENDER SERVER SETUP ---
+# --- 1. RENDER SERVER (බොට්ව පණපිටින් තබා ගැනීමට) ---
 app = Flask('')
+
 @app.route('/')
-def home(): return "Thili Project 1 (Top 50 + CVD) is Running Live!"
+def home():
+    return "Thili Project 1 (Triple TF Mode) is Running Live!"
 
 def run_web_server():
+    # Render මගින් ලබාදෙන Port එක ලබා ගැනීම
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -24,7 +27,7 @@ sri_lanka_tz = pytz.timezone('Asia/Colombo')
 TELEGRAM_TOKEN = '8332489688:AAEsjcVC2AHRVCeKMb6oBGddk1_1BwwZCX0'
 CHAT_ID = '1164598763'
 
-# ඔයා ඉල්ලපු Top 50 Coins ලැයිස්තුව
+# ඔයා තීරණය කළ කාසි 50 ලැයිස්තුව
 symbols = [
     'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ADA/USDT', 'DOT/USDT', 'LINK/USDT', 'DOGE/USDT', 'MATIC/USDT', 'SHIB/USDT',
     'AVAX/USDT', 'LTC/USDT', 'TRX/USDT', 'UNI/USDT', 'ATOM/USDT', 'XLM/USDT', 'BCH/USDT', 'ETC/USDT', 'NEAR/USDT', 'FIL/USDT',
@@ -35,71 +38,73 @@ symbols = [
 
 def send_telegram_msg(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text={message}&parse_mode=Markdown"
-    try: requests.get(url)
-    except: pass
-
-def get_advanced_signals(symbol):
     try:
-        # 1h දත්ත ලබා ගැනීම
-        bars = exchange.fetch_ohlcv(symbol, timeframe='1h', limit=50)
-        df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-        
-        # 1. Whale Ratio
-        df['vol_ma'] = df['volume'].rolling(window=20).mean()
-        ratio = df['volume'].iloc[-1] / df['vol_ma'].iloc[-1]
-        
-        # 2. CVD (Cumulative Volume Delta) Logic
-        # මිල ඉහළ යනවා නම් Volume එක ධන (+) ලෙසත්, මිල පහළ යනවා නම් සෘණ (-) ලෙසත් ගනී.
-        df['delta'] = df.apply(lambda x: x['volume'] if x['close'] > x['open'] else -x['volume'], axis=1)
-        df['cvd'] = df['delta'].cumsum()
-        
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        
-        # 3. Buy/Sell Direction
-        side = "BUY 🟢" if last['close'] > last['open'] else "SELL 🔴"
-        
-        # 4. Trap Detection (Divergence)
-        trap_status = "Safe ✅"
-        if last['close'] > prev['close'] and last['cvd'] < prev['cvd']:
-            trap_status = "⚠️ FAKE PUMP (CVD Divergence)"
-        elif last['close'] < prev['close'] and last['cvd'] > prev['cvd']:
-            trap_status = "⚠️ FAKE DUMP (CVD Divergence)"
-            
-        return ratio, last['close'], side, trap_status
+        requests.get(url)
     except:
-        return 0, 0, "None", "Error"
+        pass
+
+def get_volume_data(symbol, timeframe):
+    try:
+        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=30)
+        df = pd.DataFrame(bars, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+        df['vol_ma'] = df['volume'].rolling(window=20).mean()
+        last_row = df.iloc[-1]
+        ratio = last_row['volume'] / last_row['vol_ma']
+        side = "Buy" if last_row['close'] > last_row['open'] else "Sell"
+        return ratio, last_row['close'], side
+    except:
+        return 0, 0, "None"
 
 def monitor_market():
-    print("Whale Monitoring Started for Top 50 with Buy/Sell & CVD...")
-    send_telegram_msg("🚀 *Thili Project 1 (Top 50 Mode) ආරම්භ විය!* \nBuy/Sell සහ Trap Detection සක්‍රීයයි.")
+    print("Whale Monitoring Started (Triple TF Mode)...")
+    send_telegram_msg("Thili Project 1: Triple Confirmation Mode Started!")
     
     while True:
         try:
             for symbol in symbols:
-                ratio, price, side, trap = get_advanced_signals(symbol)
+                # 1. 4H පරීක්ෂාව
+                ratio_4h, price, side_4h = get_volume_data(symbol, '4h')
                 
-                # Whale Ratio 2.5 ට වැඩිනම් පමණක් ඇලර්ට් කරයි
-                if ratio > 2.5:
-                    time_now = datetime.now(sri_lanka_tz).strftime('%I:%M %p')
-                    msg = (f"🚨 *WHALE SIGNAL DETECTED* 🚨\n\n"
-                           f"💎 *කාසිය:* {symbol}\n"
-                           f"🔥 *Action:* {side}\n"
-                           f"💰 *මිල:* ${price}\n"
-                           f"📊 *Whale Ratio:* {ratio:.2f}x\n"
-                           f"🛡️ *CVD Status:* {trap}\n"
-                           f"⏰ *වේලාව:* {time_now}\n\n"
-                           f"🔗 [Chart](https://www.tradingview.com/chart/?symbol=KRAKEN:{symbol.replace('/','')})")
-                    send_telegram_msg(msg)
+                if ratio_4h > 2.0:
+                    # 2. 1H තහවුරු කිරීම
+                    ratio_1h, _, side_1h = get_volume_data(symbol, '1h')
+                    
+                    if ratio_1h > 1.8:
+                        # 3. 5M තහවුරු කිරීම
+                        ratio_5m, _, _ = get_volume_data(symbol, '5m')
+                        
+                        if ratio_5m > 1.5:
+                            time_sl = datetime.now(sri_lanka_tz).strftime('%Y-%m-%d %I:%M %p')
+                            
+                            # Emoji ඉවත් කළ පිරිසිදු මැසේජ් එක
+                            msg = (f"*EXTREME WHALE SIGNAL FROM RENDER*\n\n"
+                                   f"*Coin:* {symbol}\n"
+                                   f"*Trend (4H):* {side_4h}\n"
+                                   f"*Price:* ${price}\n"
+                                   f"*4H Ratio:* {ratio_4h:.2f}x\n"
+                                   f"*1H Ratio:* {ratio_1h:.2f}x\n"
+                                   f"*5M Ratio:* {ratio_5m:.2f}x\n"
+                                   f"*Time:* {time_sl}\n\n"
+                                   f"*Triple Confirmation Success!*")
+                            
+                            send_telegram_msg(msg)
+                            print(f"Signal sent for {symbol}")
                 
-                time.sleep(1.2) # API Limit වැළැක්වීමට
+                # API Limit නොවීමට තත්පර 1ක විවේකයක්
+                time.sleep(1)
             
-            time.sleep(300) # විනාඩි 5කට වරක් සම්පූර්ණ ලිස්ට් එකම පරීක්ෂා කරයි
+            # සම්පූර්ණ ලිස්ට් එක පරීක්ෂා කර අවසන් වූ පසු විනාඩි 3ක විවේකයක්
+            time.sleep(180)
+            
         except Exception as e:
             print(f"Error: {e}")
             time.sleep(30)
 
+# --- 3. EXECUTION ---
 if __name__ == "__main__":
+    # බොට් එක වෙනම Thread එකක රන් කිරීම
     t = Thread(target=monitor_market)
     t.start()
+    
+    # සර්වර් එක ප්‍රධාන Thread එකේ රන් කිරීම
     run_web_server()
